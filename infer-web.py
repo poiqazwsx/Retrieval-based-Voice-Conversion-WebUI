@@ -137,7 +137,7 @@ outside_index_root = os.getenv("outside_index_root")
 
 names = []
 for name in os.listdir(weight_root):
-    if name.endswith(".pth"):
+    if name.endswith((".pth", ".safetensors")):
         names.append(name)
 index_paths = []
 
