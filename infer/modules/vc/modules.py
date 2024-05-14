@@ -1,5 +1,7 @@
 import traceback
 import logging
+import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -7,7 +9,8 @@ import numpy as np
 import soundfile as sf
 import torch
 from io import BytesIO
-
+from safetensors.torch import load_file, save_file
+import os
 from infer.lib.audio import load_audio, wav2
 from infer.lib.infer_pack.models import (
     SynthesizerTrnMs256NSFsid,
@@ -20,7 +23,7 @@ from infer.modules.vc.utils import *
 
 
 class VC:
-    def __init__(self, config):
+    def __init__(self, config_file):
         self.n_spk = None
         self.tgt_sr = None
         self.net_g = None
@@ -31,7 +34,14 @@ class VC:
         self.version = None
         self.hubert_model = None
 
-        self.config = config
+        # Load the config from the file
+        self.config_file = config_file
+        with open(config_file, 'r') as f:
+            self.config = json.load(f)
+
+        # Initialize other properties based on the config
+        self.is_half = self.config.get('is_half', False)
+        self.device = torch.device(self.config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
 
     def get_vc(self, sid, *to_return_protect):
         logger.info("Get sid: " + sid)
@@ -70,14 +80,14 @@ class VC:
                 if self.version == "v1":
                     if self.if_f0 == 1:
                         self.net_g = SynthesizerTrnMs256NSFsid(
-                            *self.cpt["config"], is_half=self.config.is_half
+                            *self.cpt["config"], is_half=self.config.get('is_half', False)
                         )
                     else:
                         self.net_g = SynthesizerTrnMs256NSFsid_nono(*self.cpt["config"])
                 elif self.version == "v2":
                     if self.if_f0 == 1:
                         self.net_g = SynthesizerTrnMs768NSFsid(
-                            *self.cpt["config"], is_half=self.config.is_half
+                            *self.cpt["config"], is_half=self.config.get('is_half', False)
                         )
                     else:
                         self.net_g = SynthesizerTrnMs768NSFsid_nono(*self.cpt["config"])
@@ -96,7 +106,7 @@ class VC:
         person = f'{os.getenv("weight_root")}/{sid}'
         logger.info(f"Loading: {person}")
 
-        self.cpt = torch.load(person, map_location="cpu")
+        self.cpt = load_file(person)
         self.tgt_sr = self.cpt["config"][-1]
         self.cpt["config"][-3] = self.cpt["weight"]["emb_g.weight"].shape[0]  # n_spk
         self.if_f0 = self.cpt.get("f0", 1)
@@ -111,13 +121,13 @@ class VC:
 
         self.net_g = synthesizer_class.get(
             (self.version, self.if_f0), SynthesizerTrnMs256NSFsid
-        )(*self.cpt["config"], is_half=self.config.is_half)
+        )(*self.cpt["config"], is_half=self.config.get('is_half', False))
 
         del self.net_g.enc_q
 
         self.net_g.load_state_dict(self.cpt["weight"], strict=False)
-        self.net_g.eval().to(self.config.device)
-        if self.config.is_half:
+        self.net_g.eval().to(self.config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+        if self.config.get('is_half', False):
             self.net_g = self.net_g.half()
         else:
             self.net_g = self.net_g.float()
@@ -298,3 +308,6 @@ class VC:
             yield "\n".join(infos)
         except:
             yield traceback.format_exc()
+
+config_path = r".\assets\weights\output.safetensors.config.json"  # Replace with the actual path 
+vc = VC(config_path)

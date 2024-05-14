@@ -1,19 +1,23 @@
 import argparse
 import torch
+import json
 from safetensors.torch import save_file
-
 def convert_to_safetensors(pth_file_path: str, output_filename: str):
   """
-  Converts a PyTorch .pth file to a .safetensors file, 
-  handling nested dictionaries and excluding non-tensor keys.
-
-  Args:
-      pth_file_path: Path to the .pth file.
-      output_filename: Desired filename for the output .safetensors file.
+  Converts a PyTorch .pth file to a .safetensors file,
+  saving the 'config' separately.
   """
   try:
-    # Load the PyTorch model onto CPU
     state_dict = torch.load(pth_file_path, map_location=torch.device('cpu'))
+
+    # Extract config 
+    config = state_dict.pop('config', None)
+    if config:
+        config_filename = output_filename + '.config.json'
+        with open(config_filename, 'w') as f:
+            json.dump(config, f)
+        print(f"Saved config to '{config_filename}'")
+
 
     # Flatten the state_dict, excluding non-tensor values
     flattened_state_dict = {}
